@@ -18,6 +18,7 @@ for the driver to work it also needs RS232 to Ethernet like this one:
         Parent save source name to be display on dashboard
 Jorge Martinez
 */
+//to do: Change Telnet to RawSocket
 
 metadata {
     definition(name: 'Parent Xantech 8 Zone Amp Controller', namespace: 'suresh.kavan', author: 'Jorge Martinez') {
@@ -77,6 +78,7 @@ def Unschedule() {
     if (logEnable) log.debug 'Parent unschedule'
     unschedule()
 }
+
 def setChildzones() {
     if (logEnable) log.debug 'Parent setChildzones'
     def children = getChildDevices()
