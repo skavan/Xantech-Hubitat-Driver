@@ -15,10 +15,14 @@ metadata {
         capability 'Switch'
         capability 'Initialize'
         capability 'Actuator'
-        capability 'Switch'
-        capability 'Sensor'
+        //capability 'Switch'
+        capability 'ContactSensor'
         capability 'AudioVolume'
-        capability 'MusicPlayer'
+        //capability 'MusicPlayer'
+        capability "PushableButton"
+        capability "MediaInputSource"
+        
+
         attribute 'zone' , 'NUMBER'
         attribute 'mediaSource', 'NUMBER'
         attribute 'level' , 'NUMBER'
@@ -47,7 +51,8 @@ metadata {
         }
     }
 }
-def play () {
+
+/* def play () {
     if (logEnable) log.debug 'play'
     state.status = 'play'
     sendEvent(name: 'status', value: 'play', isStateChange: true)
@@ -56,7 +61,8 @@ def stop () {
     if (logEnable) log.debug 'stop'
     state.status = 'stop'
     sendEvent(name: 'status', value: 'stop', isStateChange: true)
-}
+} */
+
 def UpdateData (NewData) {
     def statusType = NewData.substring(2, 4)
     if (logEnable) log.debug statusType
@@ -88,7 +94,7 @@ def UpdateData (NewData) {
             }
             break
         case 'VO':
-            
+
             // 1. Find the starting index:
             def startIndex = 4  // You know this will always be the 4th character (0-based)
             // 2. Find the index of the "+" character:
@@ -151,13 +157,14 @@ def UpdateData (NewData) {
             break
     }
 }
+
 def setZone () {
     len = device.deviceNetworkId.length()
     state.zone = device.deviceNetworkId.substring(len - 2, len).toInteger()
     sendEvent(name: 'zone', value: state.zone, isStateChange: true)
 }
 
-/* Next/Previous Track Not Supported */
+/*
 def nextTrack() {
     if (state.mediaSource < 6) {
         def newmediaSource = state.mediaSource + 1
@@ -177,7 +184,6 @@ def nextTrack() {
             }
     }
 }
-/* Next/Previous Track Not Supported */
 def previousTrack() {
     if (state.mediaSource > 1) {
         def newmediaSource = state.mediaSource - 1
@@ -197,6 +203,8 @@ def previousTrack() {
             }
     }
 }
+*/
+
 def installed() {
     log.info('Xantech 8 Zone Amp Controller: installed() ' + state.name + state.zone)
     initialize()
@@ -213,7 +221,7 @@ def initialize() {
 }
 def setLevel (Percent) {
     Value = Math.round(Percent / 100 * settings.MaxVolumen)
-    if(logEnable) log.debug ("setLevel call:${Percent}%")
+    if (logEnable) log.debug("setLevel call:${Percent}%")
     try {
         if (Value > settings.MaxVolumen) {
             Value = settings.MaxVolumen
@@ -235,8 +243,9 @@ def setLevel (Percent) {
         log.warn "Call to off failed: ${e.message}"
     }
 }
-def on() {
+def on(Map parameters = [:]) {
     if (logEnable) log.debug 'trunning on'
+    log.debug 'parameters:'+ parameters
     try {
         state.switch = 'on'
         sendEvent(name: 'switch', value: 'on', isStateChange: true)
@@ -310,11 +319,35 @@ def volumeDown() {
 def setVolume(Volume) {
     setLevel(Volume)
 }
+
+void push(btnNum) {
+    if (logEnable) {
+        log.debug('mute button pushed: ' + btnNum + 'current state: ' + state.mute)
+    }
+   //sendEvent(name: "pushed", value: btnNum, isStateChange: true, type: "digital")
+}
+
+def contact(status) {
+    log.debug('contact status:'+ status)
+}
+
+def open(){
+    mute()
+    log.debug('mute button pushed: ON')
+}
+
+def closed(){
+    unmute()
+    log.debug('mute button pushed: OFF')
+}
+
+
 def mute() {
     if (logEnable) log.debug 'mute'
     try {
         state.mute = 'muted'
         sendEvent(name: 'mute', value: 'muted', isStateChange: true)
+        sendEvent(name: "contact", value: "open", isStateChange: true)
         parent.sendMsg("!${state.zone}MU1+")
   } catch (Exception e) {
         log.warn "Call to off failed: ${e.message}"
@@ -325,6 +358,7 @@ def unmute() {
     try {
         state.mute = 'unmuted'
         sendEvent(name: 'mute', value: 'unmuted', isStateChange: true)
+        sendEvent(name: "contact", value: "closed", isStateChange: true)
         parent.sendMsg("!${state.zone}MU0+")
   } catch (Exception e) {
         log.warn "Call to off failed: ${e.message}"

@@ -4,18 +4,6 @@ Xantech.com/product?p_id=10761
 This driver is to control the Xantech 8 Zone amplifier.
 I wrote this diver for personal use. If you decide to use it, do it at your own risk.
 No guarantee or liability is accepted for damages of any kind.
-for the driver to work it also needs RS232 to Ethernet like this one:
-        https://www.aliexpress.com/item/32988953549.html?spm=a2g0o.productlist.0.0.517f5e27r8pql4&algo_pvid=f21f7b9e-0d3b-4920-983c-d9df0da59484&algo_expid=f21f7b9e-0d3b-4920-983c-d9df0da59484-1&btsid=0ab6f83115925263810321337e7408&ws_ab_test=searchweb0_0,searchweb201602_,searchweb201603_
-        https://www.amazon.com/USR-TCP232-302-Serial-Ethernet-Converter-Support/dp/B01GPGPEBM/ref=sr_1_6?dchild=1&keywords=RS232+to+Ethernet&qid=1592526464&sr=8-6 or similar
-        is been test it too on:
-        https://www.amazon.ca/gp/product/B087J9F6LF/ref=ppx_yo_dt_b_asin_title_o02_s00?ie=UTF8&psc=1
-        08/11/2020
-        this driver also work on a rasberry pi running ser2net.py by Pavel Revak https://github.com/pavelrevak/ser2tcp
-        is recomended to daemonize the scrips instruction on the gihub https://github.com/martinezmp3/Hubitat-Xantech-6-zone-controller/blob/master/README.md
-        08/12/2020
-        compatibility with 2 and 3 amps connected as a chain i dont own a second amp
-        08/20/2020
-        Parent save source name to be display on dashboard
 Jorge Martinez
 */
 //to do: Change Telnet to RawSocket
@@ -33,9 +21,9 @@ metadata {
         command 'poll'
         command 'forcePoll'
         command 'sendMsg' , ['STRING']
-        command 'CloseTelnet'
+        command 'closeConnection'
         command 'setChildzones'
-        command 'Unschedule'
+        command 'deleteSchedules'
     }
     preferences {
         section('Device Settings:')
@@ -74,8 +62,10 @@ metadata {
     }
 }
 
-def Unschedule() {
-    if (logEnable) log.debug 'Parent unschedule'
+def deleteSchedules() {
+    if (logEnable) {
+        log.debug 'Parent unschedule'
+    }
     unschedule()
 }
 
@@ -87,10 +77,13 @@ def setChildzones() {
     }
 }
 def recreateChildDevices() {
-    if (logEnable) log.debug 'Parent recreateChildDevices'
+    if (logEnable) {
+        log.debug 'Parent recreateChildDevices'
+    }
     deleteChildren()
     createChildDevices()
 }
+
 def createChildDevices() {
     log.debug "Parent createChildDevices ${settings.NumberAmps}"
     addChildDevice('suresh.kavan', 'Child Xantech 8 Zone Amp Controller', 'MP6ZA-child-01', [name: "child-${Zone1Name}", label: "${settings.Zone1Name}", zone: 1, isComponent: false])
@@ -138,10 +131,10 @@ def deleteChildren() {
         deleteChildDevice(child.deviceNetworkId)
     }
 }
-def CloseTelnet() {
-    if (logEnable) log.debug 'Closing telnet'
+def closeConnection() {
+    if (logEnable) log.debug 'Closing Socket'
     interfaces.rawSocket.close()
-    telnetClose()
+    //telnetClose()
     unschedule()
 }
 def installed() {
@@ -187,26 +180,25 @@ def initialize() {
 def webSocketStatus(String status){
     if (logEnable) log.debug "webSocket ${status}"
 
-    if ((status == "status: closing") && (state.wasExpectedClose)) {
+    if ((status == 'status: closing') && (state.wasExpectedClose)) {
         state.wasExpectedClose = false
-        sendEvent(name: "Connection", value: "Closed")
+        sendEvent(name: 'Connection', value: 'Closed')
         return
     } 
     else if(status == 'status: open') {
-        log.info "websocket is open"
+        log.info 'websocket is open'
         // success! reset reconnect delay
         pauseExecution(1000)
         state.reconnectDelay = 1
         state.wasExpectedClose = false
-        sendEvent(name: "Connection", value: "Open")
+        sendEvent(name: 'Connection', value: 'Open')
     } 
     else {
-        log.warn "WebSocket error, reconnecting."
-        sendEvent(name: "Connection", value: "Reconnecting")
+        log.warn 'WebSocket error, reconnecting.'
+        sendEvent(name: 'Connection', value: 'Reconnecting')
         reconnectWebSocket()
     }
 }
-
 
 def pollAmp1 () {
     if (logEnable) log.debug 'Polling First 8 Zones'
@@ -236,12 +228,6 @@ def forcePoll() {
 }
 def poll() { forcePoll() }
 
-def sendMsgOld(String msg) {
-    if(logEnable) log.debug ('Sending telnet msg: ' + msg)
-    interfaces.rawSocket.sendMessage(msg + '+')
-    return new hubitat.device.HubAction(msg, hubitat.device.Protocol.TELNET)
-}
-
 // Modified sendMsg function with overloading
 def sendMsg(String msg) {
     sendMessageInternal(msg) // Call the helper
@@ -253,11 +239,11 @@ def sendMsg(List messages) {
 
 // Helper function to handle adding to queue
 def sendMessageInternal(String msg) {
-    if (logEnable) log.debug('Queueing telnet msg: ' + msg)
+    if (logEnable) log.debug('Queueing socket msg: ' + msg)
     state.messageQueue.add(msg)
 
     // Conditional triggering of queue processing
-    if (logEnable) log.debug('sendMessageInternal: ' + state.queueProcessing + state.messageQueue.size())
+    // if (logEnable) log.debug('sendMessageInternal: ' + state.queueProcessing + state.messageQueue.size())
     if (state.queueProcessing != 'active') {
         runInMillis(state.delay, 'processQueue')
     //processQueue(state.delay) // Zero delay for immediate processing in this case
@@ -266,9 +252,8 @@ def sendMessageInternal(String msg) {
 
 // Message Processing Function
 def processQueue(int nextDelay = state.delay) {
-    if (logEnable) log.debug('processQ: ' + state.queueProcessing)
+    //if (logEnable) log.debug('processQ: ' + state.queueProcessing)
     state.queueProcessing = 'active' // Track if currently sending messages
-  //setState("queueProcessing", "active") // Track if currently sending messages
 
     def msg = state.messageQueue.pop() // Remove & get the next message
 
@@ -278,10 +263,10 @@ def processQueue(int nextDelay = state.delay) {
 
         if (state.messageQueue.size() == 0) {  // Additional check for empty queue
             state.queueProcessing = 'inactive'
-            log.debug('messageQueue was processed and now empty, queueProcessing set to inactive')
+//            log.debug('messageQueue was processed and now empty, queueProcessing set to inactive')
         } else {
             // Schedule processing of the next message
-            log.debug('setting delayed execution')
+//            log.debug('setting delayed execution')
             runInMillis(state.delay, 'processQueue')
         }
   } else {
@@ -302,7 +287,7 @@ private parse(String msg) {
     //msg = new String(hubitat.helper.HexUtils.hexStringToByteArray(hexStr)).trim()
     msg = msg.trim()
 
-    if (logEnable) log.debug('Parse recive: ' + msg + ': ' + msg.substring(0, 1) + ' -- ' + msg.substring(1, 2))
+    //if (logEnable) log.debug('Message Received: ' + msg + ': ' + msg.substring(0, 1) + ' -- ' + msg.substring(1, 2))
     // ?1PR0
     //if (!(msg.contains("Command Error")) && (msg.length()>5) && (msg.startsWith("#>"))){
     //if (msg.substring(1,3)==("#>")) {
@@ -313,25 +298,46 @@ private parse(String msg) {
             if (msg.substring(1, 2).toInteger() == child.currentValue('zone')) {
                 //log.debug("found child:" + child.currentValue("zone"))
                 child.UpdateData(msg)
-                if(logEnable) log.debug ('found parsing match: ' + msg)
+                if(logEnable) log.debug ('Message Received & Processed: ' + msg)
             }
         }
-    }
+    } else {
+        if (logEnable) {
+            log.debug ('Message Received & *Not* Processed: ' + msg)
         }
-def telnetStatus(String status) {
+    }
+}
+
+/* def telnetStatus(String status) {
     log.warn 'telnetStatus: error: ' + status
     if (status != 'receive error: Stream is closed') {
         log.error 'Connection was dropped.'
         initialize()
     }
 }
+ */
+
 def getChanelName (Number channel) {
     def channelName = null
-    if (channel == 1) channelName = Channel1Name
-    if (channel == 2) channelName = Channel2Name
-    if (channel == 3) channelName = Channel3Name
-    if (channel == 4) channelName = Channel4Name
-    if (channel == 5) channelName = Channel5Name
-    if (channel == 6) channelName = Channel6Name
+    switch (channel) {
+        case 1:
+            channelName = Channel1Name
+            break
+        case 2:
+            channelName = Channel2Name
+            break
+        case 3:
+            channelName = Channel3Name
+            break
+        case 4:
+            channelName = Channel4Name
+            break
+        case 5:
+            channelName = Channel5Name
+            break
+        case 6:
+            channelName = Channel6Name
+            break
+    }
     return channelName
 }
